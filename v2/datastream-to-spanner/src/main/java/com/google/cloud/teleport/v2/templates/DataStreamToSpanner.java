@@ -141,9 +141,10 @@ public class DataStreamToSpanner {
     @TemplateParameter.GcsReadFile(
         order = 1,
         groupName = "Source",
-        description = "File location for Datastream file output in Cloud Storage.",
+        optional = true,
+        description = "[Deprecated] File location for Datastream file output in Cloud Storage.",
         helpText =
-            "The Cloud Storage file location that contains the Datastream files to replicate. Typically, "
+            "[Deprecated] The Cloud Storage file location that contains the Datastream files to replicate. Typically, "
                 + "this is the root path for a stream.")
     String getInputFilePattern();
 
@@ -214,7 +215,6 @@ public class DataStreamToSpanner {
 
     @TemplateParameter.PubsubSubscription(
         order = 8,
-        optional = true,
         description = "The Pub/Sub subscription being used in a Cloud Storage notification policy.",
         helpText =
             "The Pub/Sub subscription being used in a Cloud Storage notification policy. The name"
@@ -608,7 +608,7 @@ public class DataStreamToSpanner {
           pipeline.apply(
               new DataStreamIO(
                       options.getStreamName(),
-                      options.getInputFilePattern(),
+                      null,
                       options.getInputFileFormat(),
                       options.getGcsPubSubSubscription(),
                       options.getRfcStartDateTime())
