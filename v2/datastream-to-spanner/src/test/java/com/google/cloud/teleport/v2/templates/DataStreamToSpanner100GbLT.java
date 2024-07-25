@@ -41,23 +41,28 @@ import org.apache.beam.it.gcp.spanner.conditions.SpannerRowsCheck;
 import org.apache.beam.it.gcp.storage.GcsResourceManager;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Test;
+import org.junit.Rule;
 import org.junit.experimental.categories.Category;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.rules.TestRule;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
+
 
 /** Performance tests for {@link DataStreamToSpanner} DataStream to Spanner template. */
 @Category(TemplateLoadTest.class)
 @TemplateLoadTest(DataStreamToSpanner.class)
-@RunWith(JUnit4.class)
+@Execution(ExecutionMode.CONCURRENT)
 public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
 
   private static final String SPEC_PATH =
       "gs://dataflow-templates/latest/flex/Cloud_Datastream_to_Spanner";
   private final String artifactBucket = TestProperties.artifactBucket();
   private final String testRootDir = DataStreamToSpanner100GbLT.class.getSimpleName();
-  private final String spannerDdlResource = "DataStreamToSpanner100GbLT/spanner-schema.sql";
-  private final String table = "person";
   private final int maxWorkers = 100;
   private final int numWorkers = 50;
   public PubsubResourceManager pubsubResourceManager;
@@ -65,6 +70,16 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
   private GcsResourceManager gcsResourceManager;
   public DatastreamResourceManager datastreamResourceManager;
   private SecretManagerResourceManager secretClient;
+
+  private java.util.stream.Stream<Arguments> parameterGenerator() {
+    HashMap<String, Integer> tables100GB = new HashMap<String, Integer>();
+    for(int i=1; i<=10; i++){
+      tables100GB.put("person"+i,6500000);
+    }
+    return java.util.stream.Stream.of(
+        Arguments.of("baseTest100GB", "DataStreamToSpanner100GbLT/spanner-schema.sql", tables100GB)
+    );
+  }
 
   /**
    * Setup resource managers.
@@ -104,8 +119,20 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
         datastreamResourceManager);
   }
 
-  @Test
-  public void backfill100Gb() throws IOException, ParseException, InterruptedException {
+  @Rule
+  public TestRule watcher =
+      new TestWatcher() {
+        @Override
+        protected void starting(Description description) {
+          LOG.info(
+              "Starting load test {}.{}", description.getClassName(), description.getMethodName());
+          testName = description.getMethodName();
+        }
+      };
+
+  @ParameterizedTest
+  @MethodSource("parameterGenerator")
+  public void backfill(String dataSizeGb, String spannerDdlResource, HashMap<String, Integer> tables) throws IOException, ParseException, InterruptedException {
     // Setup resources
     createSpannerDDL(spannerResourceManager, spannerDdlResource);
 
@@ -157,12 +184,13 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
     PipelineLauncher.LaunchInfo jobInfo = pipelineLauncher.launch(project, region, options.build());
     assertThatPipeline(jobInfo).isRunning();
 
-    ConditionCheck[] checks = new ConditionCheck[10];
-    for (int i = 0; i < 10; ++i) {
-      checks[i] =
-          SpannerRowsCheck.builder(spannerResourceManager, table + (i + 1))
-              .setMinRows(6500000)
-              .setMaxRows(6500000)
+    ConditionCheck[] checks = new ConditionCheck[tables.size()];
+    int iterationCount = 0;
+    for (Map.Entry<String, Integer> entry : tables.entrySet()) {
+      checks[iterationCount] =
+          SpannerRowsCheck.builder(spannerResourceManager, entry.getKey())
+              .setMinRows(entry.getValue())
+              .setMaxRows(entry.getValue())
               .build();
     }
 

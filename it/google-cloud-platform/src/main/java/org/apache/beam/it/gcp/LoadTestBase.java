@@ -98,17 +98,6 @@ public abstract class LoadTestBase {
 
   protected String testName;
 
-  @Rule
-  public TestRule watcher =
-      new TestWatcher() {
-        @Override
-        protected void starting(Description description) {
-          LOG.info(
-              "Starting load test {}.{}", description.getClassName(), description.getMethodName());
-          testName = description.getMethodName();
-        }
-      };
-
   @BeforeClass
   public static void setUpClass() {
     project = TestProperties.project();
