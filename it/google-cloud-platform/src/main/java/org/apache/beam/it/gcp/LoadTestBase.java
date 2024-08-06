@@ -66,7 +66,7 @@ import org.slf4j.LoggerFactory;
   "nullness" // TODO(https://github.com/apache/beam/issues/27438)
 })
 public abstract class LoadTestBase {
-  private static final Logger LOG = LoggerFactory.getLogger(LoadTestBase.class);
+  protected static final Logger LOG = LoggerFactory.getLogger(LoadTestBase.class);
   // Dataflow resources cost factors (showing us-central-1 pricing).
   // See https://cloud.google.com/dataflow/pricing#pricing-details
   private static final double VCPU_PER_HR_BATCH = 0.056;
@@ -97,6 +97,17 @@ public abstract class LoadTestBase {
   protected PipelineOperator pipelineOperator;
 
   protected String testName;
+
+  @Rule
+  public TestRule watcher =
+      new TestWatcher() {
+        @Override
+        protected void starting(Description description) {
+          LOG.info(
+              "Starting load test {}.{}", description.getClassName(), description.getMethodName());
+          testName = description.getMethodName();
+        }
+      };
 
   @BeforeClass
   public static void setUpClass() {
@@ -469,7 +480,7 @@ public abstract class LoadTestBase {
     return values.stream().mapToDouble(d -> d).average().orElse(0.0);
   }
 
-  private static void putOptional(Map<String, Object> map, String key, @Nullable Object value) {
+  protected static void putOptional(Map<String, Object> map, String key, @Nullable Object value) {
     if (value != null) {
       map.put(key, value);
     }

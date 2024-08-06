@@ -41,17 +41,12 @@ import org.apache.beam.it.gcp.spanner.conditions.SpannerRowsCheck;
 import org.apache.beam.it.gcp.storage.GcsResourceManager;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.experimental.categories.Category;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.rules.TestRule;
-import org.junit.rules.TestWatcher;
-import org.junit.runner.Description;
-
 
 /** Performance tests for {@link DataStreamToSpanner} DataStream to Spanner template. */
 @Category(TemplateLoadTest.class)
@@ -73,12 +68,17 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
 
   private java.util.stream.Stream<Arguments> parameterGenerator() {
     HashMap<String, Integer> tables100GB = new HashMap<String, Integer>();
-    for(int i=1; i<=10; i++){
-      tables100GB.put("person"+i,6500000);
+    for (int i = 1; i <= 10; i++) {
+      tables100GB.put("person" + i, 6500000);
     }
     return java.util.stream.Stream.of(
-        Arguments.of("baseTest100GB", "DataStreamToSpanner100GbLT/spanner-schema.sql", tables100GB)
-    );
+        Arguments.of(
+            "baseTest100GB",
+            "DataStreamToSpanner100GbLT/spanner-schema.sql",
+            tables100GB,
+            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-ip-address/versions/1",
+            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-username/versions/1",
+            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-password/versions/1"));
   }
 
   /**
@@ -119,20 +119,17 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
         datastreamResourceManager);
   }
 
-  @Rule
-  public TestRule watcher =
-      new TestWatcher() {
-        @Override
-        protected void starting(Description description) {
-          LOG.info(
-              "Starting load test {}.{}", description.getClassName(), description.getMethodName());
-          testName = description.getMethodName();
-        }
-      };
-
   @ParameterizedTest
   @MethodSource("parameterGenerator")
-  public void backfill(String dataSizeGb, String spannerDdlResource, HashMap<String, Integer> tables) throws IOException, ParseException, InterruptedException {
+  public void backfill(
+      String spannerTestName,
+      String spannerDdlResource,
+      HashMap<String, Integer> tables,
+      String hostIp,
+      String username,
+      String password)
+      throws IOException, ParseException, InterruptedException {
+    LOG.info("Starting load test {}", spannerTestName);
     // Setup resources
     createSpannerDDL(spannerResourceManager, spannerDdlResource);
 
@@ -153,7 +150,7 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
             gcsResourceManager);
 
     // Setup Datastream
-    MySQLSource mySQLSource = getMySQLSource();
+    MySQLSource mySQLSource = getMySQLSource(hostIp, username, password);
     Stream stream =
         createDatastreamResources(
             artifactBucket, gcsPrefix, mySQLSource, datastreamResourceManager);
@@ -205,19 +202,10 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
     assertThatResult(result).isLaunchFinished();
 
     // export results
-    exportMetricsToBigQuery(jobInfo, getMetrics(jobInfo));
+    exportMetricsToBigQuery(spannerTestName, jobInfo, getMetrics(jobInfo));
   }
 
-  public MySQLSource getMySQLSource() {
-    String hostIp =
-        secretClient.accessSecret(
-            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-ip-address/versions/1");
-    String username =
-        secretClient.accessSecret(
-            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-username/versions/1");
-    String password =
-        secretClient.accessSecret(
-            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-password/versions/1");
+  public MySQLSource getMySQLSource(String hostIp, String username, String password) {
     MySQLSource mySQLSource = new MySQLSource.Builder(hostIp, username, password, 3306).build();
     return mySQLSource;
   }

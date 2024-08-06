@@ -16,8 +16,11 @@
 package com.google.cloud.teleport.v2.templates;
 
 import static java.util.Arrays.stream;
+import static org.apache.beam.it.common.logging.LogStrings.formatForLogging;
 import static org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.base.Preconditions.checkArgument;
 
+import com.google.api.services.bigquery.model.TableRow;
+import com.google.cloud.bigquery.InsertAllRequest.RowToInsert;
 import com.google.cloud.datastream.v1.DestinationConfig;
 import com.google.cloud.datastream.v1.SourceConfig;
 import com.google.cloud.datastream.v1.Stream;
@@ -26,12 +29,21 @@ import com.google.pubsub.v1.SubscriptionName;
 import com.google.pubsub.v1.TopicName;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import org.apache.beam.it.common.PipelineLauncher.LaunchInfo;
+import org.apache.beam.it.common.TestProperties;
 import org.apache.beam.it.gcp.TemplateLoadTestBase;
+import org.apache.beam.it.gcp.bigquery.BigQueryResourceManager;
 import org.apache.beam.it.gcp.datastream.DatastreamResourceManager;
 import org.apache.beam.it.gcp.datastream.JDBCSource;
 import org.apache.beam.it.gcp.pubsub.PubsubResourceManager;
 import org.apache.beam.it.gcp.spanner.SpannerResourceManager;
 import org.apache.beam.it.gcp.storage.GcsResourceManager;
+import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.base.Strings;
 
 /**
@@ -136,5 +148,53 @@ public class DataStreamToSpannerLTBase extends TemplateLoadTestBase {
         stream(pathParts).noneMatch(Strings::isNullOrEmpty), "No path part can be null or empty");
 
     return String.format("gs://%s", String.join("/", pathParts));
+  }
+
+  /**
+   * Exports the metrics of given dataflow job to BigQuery.
+   *
+   * @param launchInfo Job info of the job
+   * @param metrics metrics to export
+   */
+  protected void exportMetricsToBigQuery(
+      String spannerTestName, LaunchInfo launchInfo, Map<String, Double> metrics) {
+    LOG.info("Exporting metrics:\n{}", formatForLogging(metrics));
+    try {
+      // either use the user specified project for exporting, or the same project
+      String exportProject = MoreObjects.firstNonNull(TestProperties.exportProject(), project);
+      BigQueryResourceManager bigQueryResourceManager =
+          BigQueryResourceManager.builder(testName, exportProject, CREDENTIALS)
+              .setDatasetId(TestProperties.exportDataset())
+              .build();
+      // exporting metrics to bigQuery table
+      Map<String, Object> rowContent = new HashMap<>();
+      rowContent.put("timestamp", launchInfo.createTime());
+      rowContent.put("sdk", launchInfo.sdk());
+      rowContent.put("version", launchInfo.version());
+      rowContent.put("job_type", launchInfo.jobType());
+      putOptional(rowContent, "template_name", launchInfo.templateName());
+      putOptional(rowContent, "template_version", launchInfo.templateVersion());
+      putOptional(rowContent, "template_type", launchInfo.templateType());
+      putOptional(rowContent, "pipeline_name", launchInfo.pipelineName());
+      rowContent.put("test_name", spannerTestName);
+      // Convert parameters map to list of table row since it's a repeated record
+      List<TableRow> parameterRows = new ArrayList<>();
+      for (Entry<String, String> entry : launchInfo.parameters().entrySet()) {
+        TableRow row = new TableRow().set("name", entry.getKey()).set("value", entry.getValue());
+        parameterRows.add(row);
+      }
+      rowContent.put("parameters", parameterRows);
+      // Convert metrics map to list of table row since it's a repeated record
+      List<TableRow> metricRows = new ArrayList<>();
+      for (Entry<String, Double> entry : metrics.entrySet()) {
+        TableRow row = new TableRow().set("name", entry.getKey()).set("value", entry.getValue());
+        metricRows.add(row);
+      }
+      rowContent.put("metrics", metricRows);
+      bigQueryResourceManager.write(
+          TestProperties.exportTable(), RowToInsert.of("rowId", rowContent));
+    } catch (IllegalStateException e) {
+      LOG.error("Unable to export results to datastore. ", e);
+    }
   }
 }
