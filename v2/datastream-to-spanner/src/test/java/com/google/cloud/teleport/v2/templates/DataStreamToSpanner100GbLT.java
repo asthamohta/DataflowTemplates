@@ -41,6 +41,7 @@ import org.apache.beam.it.gcp.spanner.conditions.SpannerRowsCheck;
 import org.apache.beam.it.gcp.storage.GcsResourceManager;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -67,7 +68,7 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
   private SecretManagerResourceManager secretClient;
 
   private java.util.stream.Stream<Arguments> parameterGenerator() {
-    HashMap<String, Integer> tables100GB = new HashMap<String, Integer>();
+    HashMap<String, Integer> tables100GB = new HashMap<>();
     for (int i = 1; i <= 10; i++) {
       tables100GB.put("person" + i, 6500000);
     }
@@ -76,9 +77,9 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
             "baseTest100GB",
             "DataStreamToSpanner100GbLT/spanner-schema.sql",
             tables100GB,
-            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-ip-address/versions/1",
-            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-username/versions/1",
-            "projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-password/versions/1"));
+            secretClient.accessSecret("projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-ip-address/versions/1"),
+            secretClient.accessSecret("projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-username/versions/1"),
+            secretClient.accessSecret("projects/269744978479/secrets/nokill-datastream-mysql-to-spanner-cloudsql-password/versions/1")));
   }
 
   /**
@@ -111,7 +112,7 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
    * @throws IOException
    */
   @After
-  public void cleanUp() throws IOException {
+  public void cleanUp(){
     ResourceManagerUtils.cleanResources(
         spannerResourceManager,
         pubsubResourceManager,
@@ -121,6 +122,7 @@ public class DataStreamToSpanner100GbLT extends DataStreamToSpannerLTBase {
 
   @ParameterizedTest
   @MethodSource("parameterGenerator")
+  @Test
   public void backfill(
       String spannerTestName,
       String spannerDdlResource,
